@@ -7,7 +7,7 @@ const rawData = fs.readFileSync("./db.json", "utf-8");
 const pokemons = JSON.parse(rawData);
 
 /* GET users listing with pagination and filtering. */
-router.get("/", function (req, res, next) {
+router.get("/", function (req, res) {
   let { page, limit, search, type } = req.query;
   page = parseInt(page) || 1;
   limit = parseInt(limit) || 10;
@@ -65,29 +65,161 @@ router.get("/:id", function (req, res, next) {
 
   // Trả về dữ liệu
   res.json({
-    pokemon: {
-      id: currentPokemon.id,
-      name: currentPokemon.name,
-      types: currentPokemon.types,
-      url: `/images/${currentPokemon.id}.png`,
+    data: {
+      pokemon: {
+        id: currentPokemon.id,
+        name: currentPokemon.name,
+        types: currentPokemon.types,
+        total: currentPokemon.total,
+        hp: currentPokemon.hp,
+        attack: currentPokemon.attack,
+        defense: currentPokemon.defense,
+        url: `http://localhost:3000/images/${currentPokemon.id}.png`,
+      },
+      previousPokemon: previousPokemon
+        ? {
+            id: previousPokemon.id,
+            name: previousPokemon.name,
+            types: previousPokemon.types,
+            total: previousPokemon.total,
+            hp: previousPokemon.hp,
+            attack: previousPokemon.attack,
+            defense: previousPokemon.defense,
+            url: `http://localhost:3000/images/${previousPokemon.id}.png`,
+          }
+        : null,
+      nextPokemon: nextPokemon
+        ? {
+            id: nextPokemon.id,
+            name: nextPokemon.name,
+            types: nextPokemon.types,
+            total: nextPokemon.total,
+            hp: nextPokemon.hp,
+            attack: nextPokemon.attack,
+            defense: nextPokemon.defense,
+            url: `http://localhost:3000/images/${nextPokemon.id}.png`,
+          }
+        : null,
     },
-    previousPokemon: previousPokemon
-      ? {
-          id: previousPokemon.id,
-          name: previousPokemon.name,
-          types: previousPokemon.types,
-          url: `/images/${previousPokemon.id}.png`,
-        }
-      : null,
-    nextPokemon: nextPokemon
-      ? {
-          id: nextPokemon.id,
-          name: nextPokemon.name,
-          types: nextPokemon.types,
-          url: `/images/${nextPokemon.id}.png`,
-        }
-      : null,
   });
+});
+// Các loại Pokémon hợp lệ
+const validPokemonTypes = [
+  "Grass",
+  "Fire",
+  "Water",
+  "Electric",
+  "Normal",
+  "Ice",
+  "Fighting",
+  "Poison",
+  "Ground",
+  "Flying",
+  "Psychic",
+  "Bug",
+  "Rock",
+  "Ghost",
+  "Dark",
+  "Dragon",
+  "Steel",
+  "Fairy",
+];
+
+// Tạo Pokémon mới
+router.post("/", (req, res) => {
+  const { id, name, types, url } = req.body;
+
+  // Kiểm tra các trường bắt buộc
+  if (!id || !name || !types || !url) {
+    return res
+      .status(400)
+      .json({ error: "Thiếu dữ liệu bắt buộc. (name, id, types hoặc URL)" });
+  }
+
+  // Kiểm tra nếu Pokémon đã tồn tại
+  const existingPokemon = pokemons.find(
+    (pokemon) => pokemon.id === id || pokemon.name === name
+  );
+  if (existingPokemon) {
+    return res.status(400).json({ error: "Pokémon này tồn tại." });
+  }
+
+  // Kiểm tra số lượng loại (chỉ được có 1 hoặc 2 loại)
+  if (!Array.isArray(types) || types.length === 0 || types.length > 2) {
+    return res
+      .status(400)
+      .json({ error: "Pokémon chỉ có thể có một hoặc hai loại." });
+  }
+
+  // Kiểm tra loại hợp lệ
+  for (const type of types) {
+    if (!validPokemonTypes.includes(type)) {
+      return res
+        .status(400)
+        .json({ error: `Loại Pokémon không hợp lệ: ${type}.` });
+    }
+  }
+
+  // Thêm Pokémon mới vào danh sách
+  const newPokemon = { id, name, types, url };
+  pokemons.push(newPokemon);
+
+  // Lưu lại db.json với Pokémon mới
+  fs.writeFileSync("./db.json", JSON.stringify(pokemons, null, 2));
+
+  res
+    .status(201)
+    .json({ message: "Pokémon đã được thêm thành công.", pokemon: newPokemon });
+});
+
+router.put("/:id", (req, res) => {
+  const pokemonId = parseInt(req.params.id);
+  const updatedData = req.body;
+
+  // Kiểm tra Pokémon có tồn tại không
+  const pokemonIndex = pokemons.findIndex(
+    (pokemon) => pokemon.id === pokemonId
+  );
+  if (pokemonIndex === -1) {
+    return res.status(404).json({ error: "Pokémon không tồn tại." });
+  }
+
+  // Kiểm tra loại hợp lệ nếu `types` được cung cấp trong yêu cầu cập nhật
+  if (updatedData.types) {
+    const isValidType =
+      Array.isArray(updatedData.types) &&
+      updatedData.types.every((type) => validPokemonTypes.includes(type));
+    if (!isValidType) {
+      return res.status(400).json({ error: "Loại Pokémon không hợp lệ." });
+    }
+  }
+
+  // Cập nhật dữ liệu Pokémon
+  pokemons[pokemonIndex] = { ...pokemons[pokemonIndex], ...updatedData };
+  fs.writeFileSync("./db.json", JSON.stringify(pokemons, null, 2));
+
+  res.json({
+    message: "Cập nhật Pokémon thành công.",
+    data: pokemons[pokemonIndex],
+  });
+});
+
+router.delete("/:id", (req, res) => {
+  const pokemonId = parseInt(req.params.id);
+
+  // Kiểm tra Pokémon có tồn tại không
+  const pokemonIndex = pokemons.findIndex(
+    (pokemon) => pokemon.id === pokemonId
+  );
+  if (pokemonIndex === -1) {
+    return res.status(404).json({ error: "Pokémon không tồn tại." });
+  }
+
+  // Xóa Pokémon
+  const deletedPokemon = pokemons.splice(pokemonIndex, 1);
+  fs.writeFileSync("./db.json", JSON.stringify(pokemons, null, 2));
+
+  res.json({ message: "Xóa Pokémon thành công.", data: deletedPokemon });
 });
 
 module.exports = router;
